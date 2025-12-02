@@ -296,9 +296,9 @@ impl fmt::Display for Key {
 				KeyboardPlatformLayout::Standard => "Ctrl",
 				KeyboardPlatformLayout::Mac => "⌘",
 			},
-			Self::MouseLeft => "LMB",
-			Self::MouseRight => "RMB",
-			Self::MouseMiddle => "MMB",
+			Self::MouseLeft => "Click",
+			Self::MouseRight => "R.Click",
+			Self::MouseMiddle => "M.Click",
 			Self::MouseBack => "Mouse Back",
 			Self::MouseForward => "Mouse Fwd",
 
@@ -321,8 +321,14 @@ impl From<Key> for LayoutKey {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct LayoutKey {
-	pub key: Key,
+	key: Key,
 	label: String,
+}
+
+impl LayoutKey {
+	pub fn key(&self) -> Key {
+		self.key
+	}
 }
 
 pub const NUMBER_OF_KEYS: usize = Key::_KeysVariantCount as usize - 1;
