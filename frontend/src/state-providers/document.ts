@@ -4,8 +4,7 @@ import { writable } from "svelte/store";
 import { type Editor } from "@graphite/editor";
 
 import {
-	defaultWidgetLayout,
-	patchWidgetLayout,
+	patchLayout,
 	UpdateDocumentBarLayout,
 	UpdateDocumentModeLayout,
 	UpdateToolOptionsLayout,
@@ -15,16 +14,17 @@ import {
 	UpdateGraphViewOverlay,
 	UpdateGraphFadeArtwork,
 } from "@graphite/messages";
+import type { Layout } from "@graphite/messages";
 
 export function createDocumentState(editor: Editor) {
 	const state = writable({
 		// Layouts
-		documentModeLayout: defaultWidgetLayout(),
-		toolOptionsLayout: defaultWidgetLayout(),
-		documentBarLayout: defaultWidgetLayout(),
-		toolShelfLayout: defaultWidgetLayout(),
-		workingColorsLayout: defaultWidgetLayout(),
-		nodeGraphControlBarLayout: defaultWidgetLayout(),
+		documentModeLayout: [] as Layout,
+		toolOptionsLayout: [] as Layout,
+		documentBarLayout: [] as Layout,
+		toolShelfLayout: [] as Layout,
+		workingColorsLayout: [] as Layout,
+		nodeGraphControlBarLayout: [] as Layout,
 		// Graph view overlay
 		graphViewOverlayOpen: false,
 		fadeArtwork: 100,
@@ -42,7 +42,7 @@ export function createDocumentState(editor: Editor) {
 		await tick();
 
 		update((state) => {
-			patchWidgetLayout(state.documentModeLayout, updateDocumentModeLayout);
+			patchLayout(state.documentModeLayout, updateDocumentModeLayout);
 			return state;
 		});
 	});
@@ -50,7 +50,7 @@ export function createDocumentState(editor: Editor) {
 		await tick();
 
 		update((state) => {
-			patchWidgetLayout(state.toolOptionsLayout, updateToolOptionsLayout);
+			patchLayout(state.toolOptionsLayout, updateToolOptionsLayout);
 			return state;
 		});
 	});
@@ -58,7 +58,7 @@ export function createDocumentState(editor: Editor) {
 		await tick();
 
 		update((state) => {
-			patchWidgetLayout(state.documentBarLayout, updateDocumentBarLayout);
+			patchLayout(state.documentBarLayout, updateDocumentBarLayout);
 			return state;
 		});
 	});
@@ -66,7 +66,7 @@ export function createDocumentState(editor: Editor) {
 		await tick();
 
 		update((state) => {
-			patchWidgetLayout(state.toolShelfLayout, updateToolShelfLayout);
+			patchLayout(state.toolShelfLayout, updateToolShelfLayout);
 			return state;
 		});
 	});
@@ -74,13 +74,13 @@ export function createDocumentState(editor: Editor) {
 		await tick();
 
 		update((state) => {
-			patchWidgetLayout(state.workingColorsLayout, updateWorkingColorsLayout);
+			patchLayout(state.workingColorsLayout, updateWorkingColorsLayout);
 			return state;
 		});
 	});
 	editor.subscriptions.subscribeJsMessage(UpdateNodeGraphControlBarLayout, (updateNodeGraphControlBarLayout) => {
 		update((state) => {
-			patchWidgetLayout(state.nodeGraphControlBarLayout, updateNodeGraphControlBarLayout);
+			patchLayout(state.nodeGraphControlBarLayout, updateNodeGraphControlBarLayout);
 			return state;
 		});
 	});

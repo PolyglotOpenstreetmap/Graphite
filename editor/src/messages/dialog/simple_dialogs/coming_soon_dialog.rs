@@ -11,21 +11,21 @@ impl DialogLayoutHolder for ComingSoonDialog {
 	const TITLE: &'static str = "Coming Soon";
 
 	fn layout_buttons(&self) -> Layout {
-		let widgets = vec![TextButton::new("OK").emphasized(true).on_update(|_| FrontendMessage::DisplayDialogDismiss.into()).widget_holder()];
+		let widgets = vec![TextButton::new("OK").emphasized(true).on_update(|_| FrontendMessage::DisplayDialogDismiss.into()).widget_instance()];
 
-		Layout::WidgetLayout(WidgetLayout::new(vec![LayoutGroup::Row { widgets }]))
+		Layout(vec![LayoutGroup::Row { widgets }])
 	}
 }
 
 impl LayoutHolder for ComingSoonDialog {
 	fn layout(&self) -> Layout {
-		let header = vec![TextLabel::new("You've stumbled upon a placeholder").bold(true).widget_holder()];
-		let row1 = vec![TextLabel::new("This feature is not implemented yet.").widget_holder()];
+		let header = vec![TextLabel::new("You've stumbled upon a placeholder").bold(true).widget_instance()];
+		let row1 = vec![TextLabel::new("This feature is not implemented yet.").widget_instance()];
 
 		let mut rows = vec![LayoutGroup::Row { widgets: header }, LayoutGroup::Row { widgets: row1 }];
 
 		if let Some(issue) = self.issue {
-			let row2 = vec![TextLabel::new("But you can help build it! Visit its issue:").widget_holder()];
+			let row2 = vec![TextLabel::new("But you can help build it! Visit its issue:").widget_instance()];
 			let row3 = vec![
 				TextButton::new(format!("GitHub Issue #{issue}"))
 					.icon(Some("Website".into()))
@@ -36,13 +36,13 @@ impl LayoutHolder for ComingSoonDialog {
 						}
 						.into()
 					})
-					.widget_holder(),
+					.widget_instance(),
 			];
 
 			rows.push(LayoutGroup::Row { widgets: row2 });
 			rows.push(LayoutGroup::Row { widgets: row3 });
 		}
 
-		Layout::WidgetLayout(WidgetLayout::new(rows))
+		Layout(rows)
 	}
 }
