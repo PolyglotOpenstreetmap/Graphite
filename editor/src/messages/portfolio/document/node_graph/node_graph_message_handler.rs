@@ -1,6 +1,7 @@
 use super::utility_types::{BoxSelection, ContextMenuInformation, DragStart, FrontendNode};
 use super::{document_node_definitions, node_properties};
 use crate::consts::GRID_SIZE;
+use crate::messages::clipboard::utility_types::ClipboardContent;
 use crate::messages::input_mapper::utility_types::macros::{action_shortcut, action_shortcut_manual};
 use crate::messages::layout::utility_types::widget_prelude::*;
 use crate::messages::portfolio::document::document_message_handler::navigation_controls;
@@ -203,8 +204,30 @@ impl<'a> MessageHandler<NodeGraphMessage, NodeGraphMessageContext<'a>> for NodeG
 			}
 			NodeGraphMessage::CreateWire { output_connector, input_connector } => {
 				// TODO: Add support for flattening NodeInput::Import exports in flatten_with_fns https://github.com/GraphiteEditor/Graphite/issues/1762
-				if matches!(input_connector, InputConnector::Export(_)) && matches!(output_connector, OutputConnector::Import { .. }) {
-					responses.add(DialogMessage::RequestComingSoonDialog { issue: Some(1762) });
+				if let (InputConnector::Export(_), OutputConnector::Import(_)) = (input_connector, output_connector) {
+					let mid_point = (network_interface.get_output_center(&output_connector, breadcrumb_network_path).unwrap()
+						+ network_interface.get_input_center(&input_connector, breadcrumb_network_path).unwrap())
+						/ 2.;
+					let node_template = Box::new(document_node_definitions::resolve_document_node_type("Passthrough").unwrap().default_node_template());
+
+					let node_id = NodeId::new();
+					responses.add(NodeGraphMessage::InsertNode { node_id, node_template });
+					responses.add(NodeGraphMessage::ShiftNodePosition {
+						node_id,
+						x: (mid_point.x / 24.) as i32,
+						y: (mid_point.y / 24.) as i32,
+					});
+					let node_input_connector = InputConnector::node(node_id, 0);
+					let node_output_connector = OutputConnector::node(node_id, 0);
+					responses.add(NodeGraphMessage::CreateWire {
+						output_connector,
+						input_connector: node_input_connector,
+					});
+					responses.add(NodeGraphMessage::CreateWire {
+						output_connector: node_output_connector,
+						input_connector,
+					});
+
 					return;
 				}
 				network_interface.create_wire(&output_connector, &input_connector, selection_network_path);
@@ -215,11 +238,13 @@ impl<'a> MessageHandler<NodeGraphMessage, NodeGraphMessageContext<'a>> for NodeG
 				let new_ids = &all_selected_nodes.iter().enumerate().map(|(new, old)| (*old, NodeId(new as u64))).collect();
 				let copied_nodes = network_interface.copy_nodes(new_ids, selection_network_path).collect::<Vec<_>>();
 
-				// Prefix to show that these are nodes
-				let mut copy_text = String::from("graphite/nodes: ");
-				copy_text += &serde_json::to_string(&copied_nodes).expect("Could not serialize copy");
-
-				responses.add(FrontendMessage::TriggerTextCopy { copy_text });
+				let Ok(data) = serde_json::to_string(&copied_nodes) else {
+					log::error!("Failed to serialize nodes for clipboard");
+					return;
+				};
+				responses.add(ClipboardMessage::Write {
+					content: ClipboardContent::Nodes(data),
+				});
 			}
 			NodeGraphMessage::CreateNodeInLayerNoTransaction { node_type, layer } => {
 				let Some(mut modify_inputs) = ModifyInputsContext::new_with_layer(layer, network_interface, responses) else {
@@ -745,7 +770,6 @@ impl<'a> MessageHandler<NodeGraphMessage, NodeGraphMessageContext<'a>> for NodeG
 				let clicked_input = network_interface.input_connector_from_click(click, selection_network_path);
 				let clicked_output = network_interface.output_connector_from_click(click, selection_network_path);
 				let network_metadata = network_interface.network_metadata(selection_network_path).unwrap();
-
 				// Create the add node popup on right click, then exit
 				if right_click {
 					// Abort dragging a node

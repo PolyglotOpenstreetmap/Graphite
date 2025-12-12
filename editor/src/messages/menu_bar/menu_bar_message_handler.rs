@@ -1,7 +1,6 @@
 use crate::messages::debug::utility_types::MessageLoggingVerbosity;
 use crate::messages::input_mapper::utility_types::macros::action_shortcut;
 use crate::messages::layout::utility_types::widget_prelude::*;
-use crate::messages::portfolio::document::utility_types::clipboards::Clipboard;
 use crate::messages::portfolio::document::utility_types::misc::{AlignAggregate, AlignAxis, FlipAxis, GroupFolderType};
 use crate::messages::prelude::*;
 use graphene_std::path_bool::BooleanOperation;
@@ -77,7 +76,7 @@ impl LayoutHolder for MenuBarMessageHandler {
 				.label("")
 				.flush(true)
 				.icon(Some("GraphiteLogo".into()))
-				.on_commit(|_| FrontendMessage::TriggerVisitLink { url: "https://graphite.rs".into() }.into())
+				.on_commit(|_| FrontendMessage::TriggerVisitLink { url: "https://graphite.art".into() }.into())
 				.widget_instance(),
 			#[cfg(target_os = "macos")]
 			TextButton::new("Graphite")
@@ -196,20 +195,20 @@ impl LayoutHolder for MenuBarMessageHandler {
 						MenuListEntry::new("Cut")
 							.label("Cut")
 							.icon("Cut")
-							.tooltip_shortcut(action_shortcut!(PortfolioMessageDiscriminant::Cut))
-							.on_commit(|_| PortfolioMessage::Cut { clipboard: Clipboard::Device }.into())
+							.tooltip_shortcut(action_shortcut!(ClipboardMessageDiscriminant::Cut))
+							.on_commit(|_| ClipboardMessage::Cut.into())
 							.disabled(no_active_document || !has_selected_layers),
 						MenuListEntry::new("Copy")
 							.label("Copy")
 							.icon("Copy")
-							.tooltip_shortcut(action_shortcut!(PortfolioMessageDiscriminant::Copy))
-							.on_commit(|_| PortfolioMessage::Copy { clipboard: Clipboard::Device }.into())
+							.tooltip_shortcut(action_shortcut!(ClipboardMessageDiscriminant::Copy))
+							.on_commit(|_| ClipboardMessage::Copy.into())
 							.disabled(no_active_document || !has_selected_layers),
 						MenuListEntry::new("Paste")
 							.label("Paste")
 							.icon("Paste")
-							.tooltip_shortcut(action_shortcut!(FrontendMessageDiscriminant::TriggerPaste))
-							.on_commit(|_| FrontendMessage::TriggerPaste.into())
+							.tooltip_shortcut(action_shortcut!(ClipboardMessageDiscriminant::Paste))
+							.on_commit(|_| ClipboardMessage::Paste.into())
 							.disabled(no_active_document),
 					],
 					vec![
@@ -652,13 +651,13 @@ impl LayoutHolder for MenuBarMessageHandler {
 					vec![
 						MenuListEntry::new("Donate to Graphite").label("Donate to Graphite").icon("Heart").on_commit(|_| {
 							FrontendMessage::TriggerVisitLink {
-								url: "https://graphite.rs/donate/".into(),
+								url: "https://graphite.art/donate/".into(),
 							}
 							.into()
 						}),
 						MenuListEntry::new("User Manual").label("User Manual").icon("UserManual").on_commit(|_| {
 							FrontendMessage::TriggerVisitLink {
-								url: "https://graphite.rs/learn/".into(),
+								url: "https://graphite.art/learn/".into(),
 							}
 							.into()
 						}),

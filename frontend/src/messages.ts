@@ -302,6 +302,10 @@ export class UpdateMaximized extends JsMessage {
 	readonly maximized!: boolean;
 }
 
+export class UpdateFullscreen extends JsMessage {
+	readonly fullscreen!: boolean;
+}
+
 export class CloseWindow extends JsMessage {}
 
 export class UpdateViewportHolePunch extends JsMessage {
@@ -725,7 +729,7 @@ export class TriggerOpenDocument extends JsMessage {}
 
 export class TriggerImport extends JsMessage {}
 
-export class TriggerPaste extends JsMessage {}
+export class TriggerClipboardRead extends JsMessage {}
 
 export class TriggerSaveDocument extends JsMessage {
 	readonly documentId!: bigint;
@@ -868,8 +872,16 @@ export class TriggerVisitLink extends JsMessage {
 
 export class TriggerTextCommit extends JsMessage {}
 
-export class TriggerTextCopy extends JsMessage {
-	readonly copyText!: string;
+export class TriggerClipboardWrite extends JsMessage {
+	readonly content!: string;
+}
+
+export class TriggerSelectionRead extends JsMessage {
+	readonly cut!: boolean;
+}
+
+export class TriggerSelectionWrite extends JsMessage {
+	readonly content!: string;
 }
 
 export class TriggerAboutGraphiteLocalizedCommitDate extends JsMessage {
@@ -1496,7 +1508,6 @@ export type LayoutTarget =
 	| "DialogColumn1"
 	| "DialogColumn2"
 	| "DocumentBar"
-	| "DocumentMode"
 	| "LayersPanelBottomBar"
 	| "LayersPanelControlLeftBar"
 	| "LayersPanelControlRightBar"
@@ -1646,8 +1657,6 @@ export class UpdateDialogColumn2 extends WidgetDiffUpdate {}
 
 export class UpdateDocumentBarLayout extends WidgetDiffUpdate {}
 
-export class UpdateDocumentModeLayout extends WidgetDiffUpdate {}
-
 export class UpdateLayersPanelControlBarLeftLayout extends WidgetDiffUpdate {}
 
 export class UpdateLayersPanelControlBarRightLayout extends WidgetDiffUpdate {}
@@ -1698,7 +1707,6 @@ export const messageMakers: Record<string, MessageMaker> = {
 	TriggerLoadRestAutoSaveDocuments,
 	TriggerOpenDocument,
 	TriggerOpenLaunchDocuments,
-	TriggerPaste,
 	TriggerPersistenceRemoveDocument,
 	TriggerPersistenceWriteDocument,
 	TriggerSaveActiveDocument,
@@ -1706,7 +1714,10 @@ export const messageMakers: Record<string, MessageMaker> = {
 	TriggerSaveFile,
 	TriggerSavePreferences,
 	TriggerTextCommit,
-	TriggerTextCopy,
+	TriggerClipboardRead,
+	TriggerClipboardWrite,
+	TriggerSelectionRead,
+	TriggerSelectionWrite,
 	TriggerVisitLink,
 	UpdateActiveDocument,
 	UpdateBox,
@@ -1721,7 +1732,6 @@ export const messageMakers: Record<string, MessageMaker> = {
 	UpdateDocumentBarLayout,
 	UpdateDocumentLayerDetails,
 	UpdateDocumentLayerStructureJs,
-	UpdateDocumentModeLayout,
 	UpdateDocumentRulers,
 	UpdateDocumentScrollbars,
 	UpdateExportReorderIndex,
@@ -1736,7 +1746,6 @@ export const messageMakers: Record<string, MessageMaker> = {
 	UpdateLayersPanelControlBarRightLayout,
 	UpdateLayersPanelState,
 	UpdateLayerWidths,
-	UpdateMaximized,
 	UpdateMenuBarLayout,
 	UpdateMouseCursor,
 	UpdateNodeGraphControlBarLayout,
@@ -1748,6 +1757,8 @@ export const messageMakers: Record<string, MessageMaker> = {
 	UpdateNodeThumbnail,
 	UpdateOpenDocumentsList,
 	UpdatePlatform,
+	UpdateMaximized,
+	UpdateFullscreen,
 	UpdatePropertiesPanelLayout,
 	UpdatePropertiesPanelState,
 	UpdateStatusBarHintsLayout,

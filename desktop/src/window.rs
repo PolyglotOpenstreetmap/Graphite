@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use winit::cursor::{CursorIcon, CustomCursor, CustomCursorSource};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window as WinitWindow, WindowAttributes};
 
@@ -35,6 +37,8 @@ pub(crate) struct Window {
 	winit_window: Arc<dyn winit::window::Window>,
 	#[allow(dead_code)]
 	native_handle: native::NativeWindowImpl,
+	custom_cursors: HashMap<CustomCursorSource, CustomCursor>,
+	clipboard: window_clipboard::Clipboard,
 }
 
 impl Window {
@@ -54,9 +58,12 @@ impl Window {
 
 		let winit_window = event_loop.create_window(attributes).unwrap();
 		let native_handle = native::NativeWindowImpl::new(winit_window.as_ref(), app_event_scheduler);
+		let clipboard = unsafe { window_clipboard::Clipboard::connect(&winit_window) }.expect("failed to create clipboard");
 		Self {
 			winit_window: winit_window.into(),
 			native_handle,
+			custom_cursors: HashMap::new(),
+			clipboard,
 		}
 	}
 
@@ -92,6 +99,10 @@ impl Window {
 		self.winit_window.is_maximized()
 	}
 
+	pub(crate) fn is_fullscreen(&self) -> bool {
+		self.winit_window.fullscreen().is_some()
+	}
+
 	pub(crate) fn start_drag(&self) {
 		let _ = self.winit_window.drag_window();
 	}
@@ -108,11 +119,59 @@ impl Window {
 		self.native_handle.show_all();
 	}
 
-	pub(crate) fn set_cursor(&self, cursor: winit::cursor::Cursor) {
+	pub(crate) fn set_cursor(&mut self, event_loop: &dyn ActiveEventLoop, cursor: Cursor) {
+		let cursor = match cursor {
+			Cursor::Icon(cursor_icon) => cursor_icon.into(),
+			Cursor::Custom(custom_cursor_source) => {
+				let custom_cursor = match self.custom_cursors.get(&custom_cursor_source).cloned() {
+					Some(cursor) => cursor,
+					None => {
+						let Ok(custom_cursor) = event_loop.create_custom_cursor(custom_cursor_source.clone()) else {
+							tracing::error!("Failed to create custom cursor");
+							return;
+						};
+						self.custom_cursors.insert(custom_cursor_source, custom_cursor.clone());
+						custom_cursor
+					}
+				};
+				custom_cursor.into()
+			}
+		};
 		self.winit_window.set_cursor(cursor);
 	}
 
 	pub(crate) fn update_menu(&self, entries: Vec<MenuItem>) {
 		self.native_handle.update_menu(entries);
+	}
+
+	pub(crate) fn clipboard_read(&self) -> Option<String> {
+		match self.clipboard.read() {
+			Ok(data) => Some(data),
+			Err(e) => {
+				tracing::error!("Failed to read from clipboard: {e}");
+				None
+			}
+		}
+	}
+
+	pub(crate) fn clipboard_write(&mut self, data: String) {
+		if let Err(e) = self.clipboard.write(data) {
+			tracing::error!("Failed to write to clipboard: {e}")
+		}
+	}
+}
+
+pub(crate) enum Cursor {
+	Icon(CursorIcon),
+	Custom(CustomCursorSource),
+}
+impl From<CursorIcon> for Cursor {
+	fn from(icon: CursorIcon) -> Self {
+		Cursor::Icon(icon)
+	}
+}
+impl From<CustomCursorSource> for Cursor {
+	fn from(custom: CustomCursorSource) -> Self {
+		Cursor::Custom(custom)
 	}
 }

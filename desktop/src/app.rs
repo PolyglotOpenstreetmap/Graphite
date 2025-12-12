@@ -18,22 +18,25 @@ use crate::cef;
 use crate::consts::CEF_MESSAGE_LOOP_MAX_ITERATIONS;
 use crate::event::{AppEvent, AppEventScheduler};
 use crate::persist::PersistentData;
-use crate::render::GraphicsState;
+use crate::render::{RenderError, RenderState};
 use crate::window::Window;
 use crate::wrapper::messages::{DesktopFrontendMessage, DesktopWrapperMessage, Platform};
 use crate::wrapper::{DesktopWrapper, NodeGraphExecutionResult, WgpuContext, serialize_frontend_messages};
 
 pub(crate) struct App {
-	cef_context: Box<dyn cef::CefContext>,
+	render_state: Option<RenderState>,
+	wgpu_context: WgpuContext,
 	window: Option<Window>,
 	window_scale: f64,
-	cef_schedule: Option<Instant>,
-	cef_view_info_sender: Sender<cef::ViewInfoUpdate>,
-	graphics_state: Option<GraphicsState>,
-	wgpu_context: WgpuContext,
+	window_size: PhysicalSize<u32>,
+	window_maximized: bool,
+	window_fullscreen: bool,
 	app_event_receiver: Receiver<AppEvent>,
 	app_event_scheduler: AppEventScheduler,
 	desktop_wrapper: DesktopWrapper,
+	cef_context: Box<dyn cef::CefContext>,
+	cef_schedule: Option<Instant>,
+	cef_view_info_sender: Sender<cef::ViewInfoUpdate>,
 	last_ui_update: Instant,
 	avg_frame_time: f32,
 	start_render_sender: SyncSender<()>,
@@ -77,17 +80,20 @@ impl App {
 		persistent_data.load_from_disk();
 
 		Self {
-			cef_context,
-			window: None,
-			window_scale: 1.0,
-			cef_schedule: Some(Instant::now()),
-			graphics_state: None,
-			cef_view_info_sender,
+			render_state: None,
 			wgpu_context,
+			window: None,
+			window_scale: 1.,
+			window_size: PhysicalSize { width: 0, height: 0 },
+			window_maximized: false,
+			window_fullscreen: false,
 			app_event_receiver,
 			app_event_scheduler,
 			desktop_wrapper: DesktopWrapper::new(),
 			last_ui_update: Instant::now(),
+			cef_context,
+			cef_schedule: Some(Instant::now()),
+			cef_view_info_sender,
 			avg_frame_time: 0.,
 			start_render_sender,
 			web_communication_initialized: false,
@@ -95,6 +101,56 @@ impl App {
 			persistent_data,
 			launch_documents,
 		}
+	}
+
+	fn resize(&mut self) {
+		let Some(window) = &self.window else {
+			tracing::error!("Resize failed due to missing window");
+			return;
+		};
+
+		let maximized = window.is_maximized();
+		if maximized != self.window_maximized {
+			self.window_maximized = maximized;
+			self.app_event_scheduler.schedule(AppEvent::DesktopWrapperMessage(DesktopWrapperMessage::UpdateMaximized { maximized }));
+		}
+
+		let fullscreen = window.is_fullscreen();
+		if fullscreen != self.window_fullscreen {
+			self.window_fullscreen = fullscreen;
+			self.app_event_scheduler
+				.schedule(AppEvent::DesktopWrapperMessage(DesktopWrapperMessage::UpdateFullscreen { fullscreen }));
+		}
+
+		let size = window.surface_size();
+		let scale = window.scale_factor();
+		let is_new_size = size != self.window_size;
+		let is_new_scale = scale != self.window_scale;
+
+		if !is_new_size && !is_new_scale {
+			return;
+		}
+
+		if is_new_size {
+			let _ = self.cef_view_info_sender.send(cef::ViewInfoUpdate::Size {
+				width: size.width,
+				height: size.height,
+			});
+		}
+		if is_new_scale {
+			let _ = self.cef_view_info_sender.send(cef::ViewInfoUpdate::Scale(scale));
+		}
+
+		self.cef_context.notify_view_info_changed();
+
+		if let Some(render_state) = &mut self.render_state {
+			render_state.resize(size.width, size.height);
+		}
+
+		window.request_redraw();
+
+		self.window_size = size;
+		self.window_scale = scale;
 	}
 
 	fn handle_desktop_frontend_message(&mut self, message: DesktopFrontendMessage, responses: &mut Vec<DesktopWrapperMessage>) {
@@ -162,23 +218,23 @@ impl App {
 				});
 			}
 			DesktopFrontendMessage::UpdateViewportPhysicalBounds { x, y, width, height } => {
-				if let Some(graphics_state) = &mut self.graphics_state
+				if let Some(render_state) = &mut self.render_state
 					&& let Some(window) = &self.window
 				{
 					let window_size = window.surface_size();
 
 					let viewport_offset_x = x / window_size.width as f64;
 					let viewport_offset_y = y / window_size.height as f64;
-					graphics_state.set_viewport_offset([viewport_offset_x as f32, viewport_offset_y as f32]);
+					render_state.set_viewport_offset([viewport_offset_x as f32, viewport_offset_y as f32]);
 
 					let viewport_scale_x = if width != 0.0 { window_size.width as f64 / width } else { 1.0 };
 					let viewport_scale_y = if height != 0.0 { window_size.height as f64 / height } else { 1.0 };
-					graphics_state.set_viewport_scale([viewport_scale_x as f32, viewport_scale_y as f32]);
+					render_state.set_viewport_scale([viewport_scale_x as f32, viewport_scale_y as f32]);
 				}
 			}
 			DesktopFrontendMessage::UpdateOverlays(scene) => {
-				if let Some(graphics_state) = &mut self.graphics_state {
-					graphics_state.set_overlays_scene(scene);
+				if let Some(render_state) = &mut self.render_state {
+					render_state.set_overlays_scene(scene);
 				}
 			}
 			DesktopFrontendMessage::PersistenceWriteDocument { id, document } => {
@@ -259,6 +315,18 @@ impl App {
 					window.update_menu(entries);
 				}
 			}
+			DesktopFrontendMessage::ClipboardRead => {
+				if let Some(window) = &self.window {
+					let content = window.clipboard_read();
+					let message = DesktopWrapperMessage::ClipboardReadResult { content };
+					self.app_event_scheduler.schedule(AppEvent::DesktopWrapperMessage(message));
+				}
+			}
+			DesktopFrontendMessage::ClipboardWrite { content } => {
+				if let Some(window) = &mut self.window {
+					window.clipboard_write(content);
+				}
+			}
 			DesktopFrontendMessage::WindowClose => {
 				self.app_event_scheduler.schedule(AppEvent::CloseWindow);
 			}
@@ -331,19 +399,18 @@ impl App {
 				NodeGraphExecutionResult::HasRun(texture) => {
 					self.dispatch_desktop_wrapper_message(DesktopWrapperMessage::PollNodeGraphEvaluation);
 					if let Some(texture) = texture
-						&& let Some(graphics_state) = self.graphics_state.as_mut()
+						&& let Some(render_state) = self.render_state.as_mut()
 						&& let Some(window) = self.window.as_ref()
 					{
-						graphics_state.bind_viewport_texture(texture);
+						render_state.bind_viewport_texture(texture);
 						window.request_redraw();
 					}
 				}
 				NodeGraphExecutionResult::NotRun => {}
 			},
 			AppEvent::UiUpdate(texture) => {
-				if let Some(graphics_state) = self.graphics_state.as_mut() {
-					graphics_state.resize(texture.width(), texture.height());
-					graphics_state.bind_ui_texture(texture);
+				if let Some(render_state) = self.render_state.as_mut() {
+					render_state.bind_ui_texture(texture);
 					let elapsed = self.last_ui_update.elapsed().as_secs_f32();
 					self.last_ui_update = Instant::now();
 					if elapsed < 0.5 {
@@ -362,8 +429,8 @@ impl App {
 				}
 			}
 			AppEvent::CursorChange(cursor) => {
-				if let Some(window) = &self.window {
-					window.set_cursor(cursor);
+				if let Some(window) = &mut self.window {
+					window.set_cursor(event_loop, cursor);
 				}
 			}
 			AppEvent::CloseWindow => {
@@ -382,16 +449,12 @@ impl App {
 impl ApplicationHandler for App {
 	fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
 		let window = Window::new(event_loop, self.app_event_scheduler.clone());
-
-		self.window_scale = window.scale_factor();
-		let _ = self.cef_view_info_sender.send(cef::ViewInfoUpdate::Scale(self.window_scale));
-		self.cef_context.notify_view_info_changed();
-
 		self.window = Some(window);
 
-		let graphics_state = GraphicsState::new(self.window.as_ref().unwrap(), self.wgpu_context.clone());
+		let render_state = RenderState::new(self.window.as_ref().unwrap(), self.wgpu_context.clone());
+		self.render_state = Some(render_state);
 
-		self.graphics_state = Some(graphics_state);
+		self.resize();
 
 		self.desktop_wrapper.init(self.wgpu_context.clone());
 
@@ -417,35 +480,28 @@ impl ApplicationHandler for App {
 			WindowEvent::CloseRequested => {
 				self.app_event_scheduler.schedule(AppEvent::CloseWindow);
 			}
-			WindowEvent::SurfaceResized(PhysicalSize { width, height }) => {
-				let _ = self.cef_view_info_sender.send(cef::ViewInfoUpdate::Size {
-					width: width as usize,
-					height: height as usize,
-				});
-				self.cef_context.notify_view_info_changed();
-				if let Some(window) = &self.window {
-					let maximized = window.is_maximized();
-					self.app_event_scheduler.schedule(AppEvent::DesktopWrapperMessage(DesktopWrapperMessage::UpdateMaximized { maximized }));
-				}
-			}
-			WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-				self.window_scale = scale_factor;
-				let _ = self.cef_view_info_sender.send(cef::ViewInfoUpdate::Scale(self.window_scale));
-				self.cef_context.notify_view_info_changed();
+			WindowEvent::SurfaceResized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+				self.resize();
 			}
 			WindowEvent::RedrawRequested => {
-				let Some(ref mut graphics_state) = self.graphics_state else { return };
-				// Only rerender once we have a new UI texture to display
+				#[cfg(target_os = "macos")]
+				self.resize();
+
+				let Some(render_state) = &mut self.render_state else { return };
 				if let Some(window) = &self.window {
-					match graphics_state.render(window) {
+					match render_state.render(window) {
 						Ok(_) => {}
-						Err(wgpu::SurfaceError::Lost) => {
+						Err(RenderError::OutdatedUITextureError) => {
+							self.cef_context.notify_view_info_changed();
+						}
+						Err(RenderError::SurfaceError(wgpu::SurfaceError::Lost)) => {
 							tracing::warn!("lost surface");
 						}
-						Err(wgpu::SurfaceError::OutOfMemory) => {
+						Err(RenderError::SurfaceError(wgpu::SurfaceError::OutOfMemory)) => {
+							tracing::error!("GPU out of memory");
 							event_loop.exit();
 						}
-						Err(e) => tracing::error!("{:?}", e),
+						Err(RenderError::SurfaceError(e)) => tracing::error!("Render error: {:?}", e),
 					}
 					let _ = self.start_render_sender.try_send(());
 				}
